@@ -1,0 +1,1383 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MiniKafka Demo</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #eef2f6;
+      --panel: #ffffff;
+      --soft: #f8fafc;
+      --line: #d5dde8;
+      --text: #172033;
+      --muted: #647086;
+      --ink: #0f172a;
+      --accent: #087f7b;
+      --accent-dark: #066461;
+      --accent-soft: #e4f5f3;
+      --green: #25764d;
+      --amber: #a45c00;
+      --red: #b42318;
+      --blue: #245c9f;
+      --shadow: 0 14px 38px rgba(15, 23, 42, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      min-height: 100%;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 14px;
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      min-height: 40px;
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      background: var(--accent);
+      color: #fff;
+      padding: 9px 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
+    }
+
+    button:hover {
+      background: var(--accent-dark);
+      border-color: var(--accent-dark);
+      transform: translateY(-1px);
+    }
+
+    button.secondary {
+      background: #fff;
+      color: var(--accent);
+    }
+
+    button.secondary:hover {
+      background: var(--accent-soft);
+      color: var(--accent-dark);
+    }
+
+    button.ghost {
+      background: transparent;
+      color: var(--muted);
+      border-color: var(--line);
+    }
+
+    button.ghost:hover {
+      background: var(--soft);
+      color: var(--ink);
+    }
+
+    button.danger {
+      background: #fff;
+      border-color: var(--red);
+      color: var(--red);
+    }
+
+    button.danger:hover {
+      background: var(--red);
+      border-color: var(--red);
+      color: #fff;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      min-height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--text);
+      padding: 10px 12px;
+      outline: none;
+      transition: border-color 140ms ease, box-shadow 140ms ease;
+    }
+
+    textarea {
+      min-height: 92px;
+      resize: vertical;
+      font-family: Consolas, "Courier New", monospace;
+    }
+
+    input:focus,
+    select:focus,
+    textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+
+    label {
+      display: grid;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th,
+    td {
+      padding: 10px 8px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    pre {
+      min-height: 270px;
+      max-height: 560px;
+      margin: 0;
+      overflow: auto;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      border: 1px solid #1f2940;
+      border-radius: 8px;
+      background: #101626;
+      color: #e8eef8;
+      padding: 14px;
+      font: 12px/1.5 Consolas, "Courier New", monospace;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .auth-screen {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+
+    .auth-card {
+      width: min(100%, 420px);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      padding: 28px;
+    }
+
+    .auth-card h1 {
+      margin: 0 0 6px;
+      color: var(--ink);
+      font-size: 26px;
+      line-height: 1.2;
+    }
+
+    .auth-card p {
+      margin: 0 0 22px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .auth-form {
+      display: grid;
+      gap: 14px;
+    }
+
+    .auth-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 4px;
+    }
+
+    .message {
+      min-height: 20px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .message.error {
+      color: var(--red);
+    }
+
+    .app-shell {
+      min-height: 100vh;
+    }
+
+    .app-header {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      background: rgba(255, 255, 255, 0.96);
+      border-bottom: 1px solid var(--line);
+      box-shadow: 0 1px 10px rgba(15, 23, 42, 0.04);
+    }
+
+    .topbar {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .brand {
+      min-width: 0;
+    }
+
+    .brand h1 {
+      margin: 0;
+      color: var(--ink);
+      font-size: 22px;
+      line-height: 1.2;
+    }
+
+    .brand span {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .api-switch {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      min-height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      color: var(--ink);
+      padding: 6px 8px 6px 13px;
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: none;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .api-switch input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+    }
+
+    .switch-track {
+      width: 42px;
+      height: 24px;
+      border-radius: 999px;
+      background: #dce3ec;
+      padding: 3px;
+      transition: background 140ms ease;
+    }
+
+    .switch-thumb {
+      display: block;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 1px 4px rgba(15, 23, 42, 0.25);
+      transition: transform 140ms ease;
+    }
+
+    .api-switch input:checked + .switch-track {
+      background: var(--accent);
+    }
+
+    .api-switch input:checked + .switch-track .switch-thumb {
+      transform: translateX(18px);
+    }
+
+    .signed-in {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--green);
+    }
+
+    .page {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 22px 20px 32px;
+    }
+
+    .ecommerce-view {
+      display: grid;
+      grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .main-column,
+    .console-column {
+      display: grid;
+      gap: 18px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      min-height: 58px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .panel-head h2 {
+      margin: 0;
+      color: var(--ink);
+      font-size: 16px;
+    }
+
+    .panel-body {
+      padding: 16px;
+    }
+
+    .stack {
+      display: grid;
+      gap: 14px;
+    }
+
+    .grid-two {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+    }
+
+    .order-panel {
+      position: sticky;
+      top: 92px;
+    }
+
+    .flow-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .stage {
+      min-height: 166px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--soft);
+      padding: 14px;
+      display: grid;
+      align-content: space-between;
+      gap: 12px;
+    }
+
+    .stage-number {
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: #e8eff8;
+      color: var(--blue);
+      font-weight: 800;
+    }
+
+    .stage h3 {
+      margin: 10px 0 4px;
+      color: var(--ink);
+      font-size: 15px;
+    }
+
+    .stage p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+
+    .stage strong {
+      color: var(--ink);
+      font-size: 24px;
+      line-height: 1;
+    }
+
+    .status-grid,
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .stat {
+      min-height: 84px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--soft);
+      padding: 12px;
+    }
+
+    .stat span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .stat strong {
+      color: var(--ink);
+      font-size: 24px;
+      overflow-wrap: anywhere;
+    }
+
+    .map-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .map-item {
+      min-height: 92px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--soft);
+      padding: 12px;
+    }
+
+    .map-item span {
+      display: block;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      margin-bottom: 7px;
+    }
+
+    .map-item strong {
+      color: var(--ink);
+      display: block;
+      line-height: 1.35;
+    }
+
+    .badge {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 4px 8px;
+      background: #e8f5ef;
+      color: var(--green);
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .badge.pending {
+      background: #fff4df;
+      color: var(--amber);
+    }
+
+    .badge.done {
+      background: #e8f5ef;
+      color: var(--green);
+    }
+
+    .badge.info {
+      background: #e8eff8;
+      color: var(--blue);
+    }
+
+    .empty {
+      color: var(--muted);
+      padding: 18px 6px;
+      text-align: center;
+    }
+
+    .api-console {
+      display: grid;
+      gap: 18px;
+    }
+
+    .console-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      align-items: start;
+    }
+
+    .wide {
+      grid-column: 1 / -1;
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    @media (max-width: 1120px) {
+      .ecommerce-view,
+      .console-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .order-panel {
+        position: static;
+      }
+
+      .map-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 760px) {
+      .topbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .header-actions {
+        width: 100%;
+        justify-content: flex-start;
+      }
+
+      .page {
+        padding: 14px 12px 24px;
+      }
+
+      .flow-grid,
+      .status-grid,
+      .metrics-grid,
+      .grid-two,
+      .map-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .auth-card {
+        padding: 22px;
+      }
+
+      .auth-actions {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+<div id="authView" class="auth-screen">
+  <section class="auth-card" aria-labelledby="authTitle">
+    <h1 id="authTitle">MiniKafka Demo</h1>
+    <p>Login or register</p>
+    <div class="auth-form">
+      <label>Username
+        <input id="username" value="admin" autocomplete="username">
+      </label>
+      <label>Email
+        <input id="email" value="admin@example.com" autocomplete="email">
+      </label>
+      <label>Password
+        <input id="password" type="password" value="password123" autocomplete="current-password">
+      </label>
+      <div class="auth-actions">
+        <button id="loginBtn">Login</button>
+        <button class="secondary" id="registerBtn">Register</button>
+      </div>
+      <div id="authMessage" class="message"></div>
+    </div>
+  </section>
+</div>
+
+<div id="appView" class="app-shell hidden">
+  <header class="app-header">
+    <div class="topbar">
+      <div class="brand">
+        <h1 id="pageTitle">MiniKafka Order Demo</h1>
+        <span id="pageSubtitle">Order events with topics, offsets, workers, and lag</span>
+      </div>
+      <div class="header-actions">
+        <label class="api-switch" title="Open full API console">
+          API Console
+          <input id="apiToggle" type="checkbox">
+          <span class="switch-track"><span class="switch-thumb"></span></span>
+        </label>
+        <div class="signed-in"><span class="dot"></span><span id="signedInUser">signed in</span></div>
+        <button id="logoutBtn" class="ghost">Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div id="ecommerceView" class="ecommerce-view">
+      <section class="panel order-panel" aria-labelledby="orderTitle">
+        <div class="panel-head">
+          <h2 id="orderTitle">Create Order</h2>
+        </div>
+        <div class="panel-body stack">
+          <label>Customer
+            <input id="demoCustomer" value="Arya">
+          </label>
+          <label>Item
+            <input id="demoItem" value="Mechanical Keyboard">
+          </label>
+          <label>Amount
+            <input id="demoAmount" type="number" min="0.01" step="0.01" value="2499.00">
+          </label>
+          <div class="actions">
+            <button id="createDemoOrderBtn">Create Order</button>
+            <button id="loadDemoStateBtn" class="secondary">Refresh</button>
+            <button id="resetDemoBtn" class="danger">Clear Orders</button>
+          </div>
+        </div>
+      </section>
+
+      <div class="main-column">
+        <section class="panel" aria-labelledby="pipelineTitle">
+          <div class="panel-head">
+            <h2 id="pipelineTitle">E-Commerce Flow</h2>
+          </div>
+          <div class="panel-body stack">
+            <div class="flow-grid">
+              <div class="stage">
+                <div>
+                  <span class="stage-number">1</span>
+                  <h3>Order Created</h3>
+                  <p>Topic: ecommerce.orders</p>
+                </div>
+                <strong id="ordersTopicCount">0</strong>
+              </div>
+              <div class="stage">
+                <div>
+                  <span class="stage-number">2</span>
+                  <h3>Payment Completed</h3>
+                  <p>Topic: ecommerce.payments</p>
+                </div>
+                <div class="actions">
+                  <strong id="paymentsTopicCount">0</strong>
+                  <button id="processDemoPaymentsBtn" class="secondary">Run Payment</button>
+                </div>
+              </div>
+              <div class="stage">
+                <div>
+                  <span class="stage-number">3</span>
+                  <h3>Notification Sent</h3>
+                  <p>Topic: ecommerce.notifications</p>
+                </div>
+                <div class="actions">
+                  <strong id="notificationsTopicCount">0</strong>
+                  <button id="processDemoNotificationsBtn" class="secondary">Run Notification</button>
+                </div>
+              </div>
+            </div>
+            <div class="status-grid">
+              <div class="stat"><span>Total Orders</span><strong id="totalOrders">0</strong></div>
+              <div class="stat"><span>Pending Payment</span><strong id="pendingPayment">0</strong></div>
+              <div class="stat"><span>Payment Lag</span><strong id="paymentLag">0</strong></div>
+              <div class="stat"><span>Notification Lag</span><strong id="notificationLag">0</strong></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" aria-labelledby="mapTitle">
+          <div class="panel-head">
+            <h2 id="mapTitle">Kafka Map</h2>
+          </div>
+          <div class="panel-body">
+            <div class="map-grid">
+              <div class="map-item"><span>Producer</span><strong>Create Order</strong></div>
+              <div class="map-item"><span>Topic</span><strong>ecommerce.orders</strong></div>
+              <div class="map-item"><span>Partition</span><strong>Key chooses log</strong></div>
+              <div class="map-item"><span>Consumer Group</span><strong>payment-worker</strong></div>
+              <div class="map-item"><span>Offset</span><strong>Next record index</strong></div>
+              <div class="map-item"><span>Lag</span><strong>Waiting records</strong></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" aria-labelledby="ordersTitle">
+          <div class="panel-head">
+            <h2 id="ordersTitle">Orders</h2>
+          </div>
+          <div class="panel-body" id="ordersTable">
+            <div class="empty">No orders yet</div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div id="apiConsoleView" class="api-console hidden">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Broker Snapshot</h2>
+          <button id="refreshConsoleBtn" class="secondary">Refresh</button>
+        </div>
+        <div class="panel-body">
+          <div class="metrics-grid">
+            <div class="stat"><span>Topics</span><strong id="metricTopics">-</strong></div>
+            <div class="stat"><span>Groups</span><strong id="metricGroups">-</strong></div>
+            <div class="stat"><span>Messages</span><strong id="metricMessages">-</strong></div>
+            <div class="stat"><span>Storage Bytes</span><strong id="metricStorage">-</strong></div>
+          </div>
+        </div>
+      </section>
+
+      <div class="console-grid">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Topics</h2>
+            <button id="loadTopicsBtn" class="secondary">Load</button>
+          </div>
+          <div class="panel-body stack">
+            <div class="grid-two">
+              <label>Topic Name
+                <input id="topicName" value="orders">
+              </label>
+              <label>Partitions
+                <input id="topicPartitions" type="number" min="1" max="128" value="3">
+              </label>
+            </div>
+            <div class="grid-two">
+              <label>Target Partitions
+                <input id="targetPartitions" type="number" min="1" max="128" value="4">
+              </label>
+              <span></span>
+            </div>
+            <div class="actions">
+              <button id="createTopicBtn">Create Topic</button>
+              <button id="increasePartitionsBtn" class="secondary">Increase Partitions</button>
+              <button id="deleteTopicBtn" class="danger">Delete Topic</button>
+            </div>
+            <div id="topicTable"></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Producer</h2>
+          </div>
+          <div class="panel-body stack">
+            <div class="grid-two">
+              <label>Topic
+                <input id="produceTopic" value="orders">
+              </label>
+              <label>Key
+                <input id="messageKey" value="order-1">
+              </label>
+            </div>
+            <label>Value
+              <textarea id="messageValue">created</textarea>
+            </label>
+            <div class="actions">
+              <button id="produceBtn">Produce Message</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Consumer</h2>
+          </div>
+          <div class="panel-body stack">
+            <div class="grid-two">
+              <label>Topic
+                <input id="consumeTopic" value="orders">
+              </label>
+              <label>Partition
+                <input id="consumePartition" type="number" min="0" placeholder="blank for all">
+              </label>
+            </div>
+            <div class="grid-two">
+              <label>Offset
+                <input id="consumeOffset" type="number" min="0" value="0">
+              </label>
+              <label>Max Messages
+                <input id="consumeMax" type="number" min="1" max="500" value="10">
+              </label>
+            </div>
+            <div class="actions">
+              <button id="consumeBtn">Consume</button>
+              <button id="endOffsetsBtn" class="secondary">End Offsets</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Consumer Group</h2>
+          </div>
+          <div class="panel-body stack">
+            <div class="grid-two">
+              <label>Group ID
+                <input id="groupId" value="checkout">
+              </label>
+              <label>Topic
+                <input id="groupTopic" value="orders">
+              </label>
+            </div>
+            <div class="grid-two">
+              <label>Max Messages
+                <input id="pollMax" type="number" min="1" max="500" value="10">
+              </label>
+              <label>Auto Commit
+                <select id="autoCommit">
+                  <option value="true">true</option>
+                  <option value="false">false</option>
+                </select>
+              </label>
+            </div>
+            <div class="actions">
+              <button id="pollBtn">Poll</button>
+              <button id="groupOffsetsBtn" class="secondary">Offsets</button>
+              <button id="groupLagBtn" class="secondary">Lag</button>
+              <button id="allGroupsBtn" class="secondary">Groups</button>
+            </div>
+            <div id="lagTable"></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>TCP Broker</h2>
+          </div>
+          <div class="panel-body stack">
+            <label>Command
+              <input id="tcpCommand" value="STATS">
+            </label>
+            <div class="actions">
+              <button id="tcpBtn">Run Command</button>
+              <button id="tcpTopicsBtn" class="secondary">TOPICS</button>
+              <button id="tcpStatsBtn" class="secondary">STATS</button>
+            </div>
+            <div class="hint">Same command handler used by the Java NIO socket server.</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <h2>E-Commerce APIs</h2>
+          </div>
+          <div class="panel-body stack">
+            <div class="actions">
+              <button id="apiCreateDemoBtn" class="secondary">Create Demo Order</button>
+              <button id="apiPaymentDemoBtn" class="secondary">Run Payment</button>
+              <button id="apiNotificationDemoBtn" class="secondary">Run Notification</button>
+              <button id="apiResetDemoBtn" class="danger">Reset Demo</button>
+            </div>
+            <div class="hint">These buttons call the same order-processing endpoints shown in the main demo.</div>
+          </div>
+        </section>
+
+        <section class="panel wide">
+          <div class="panel-head">
+            <h2>Response</h2>
+            <button id="copyBtn" class="secondary">Copy JSON</button>
+          </div>
+          <div class="panel-body">
+            <pre id="output">{}</pre>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+  const tokenKey = "minikafka.jwt";
+  const userKey = "minikafka.user";
+  const authView = document.getElementById("authView");
+  const appView = document.getElementById("appView");
+  const ecommerceView = document.getElementById("ecommerceView");
+  const apiConsoleView = document.getElementById("apiConsoleView");
+  const apiToggle = document.getElementById("apiToggle");
+  const output = document.getElementById("output");
+  const authMessage = document.getElementById("authMessage");
+
+  function value(id) {
+    return document.getElementById(id).value.trim();
+  }
+
+  function token() {
+    return localStorage.getItem(tokenKey);
+  }
+
+  function setOutput(data) {
+    output.textContent = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+  }
+
+  function setAuthMessage(text, isError = false) {
+    authMessage.textContent = text;
+    authMessage.classList.toggle("error", isError);
+  }
+
+  function showAuth() {
+    authView.classList.remove("hidden");
+    appView.classList.add("hidden");
+  }
+
+  function showApp() {
+    authView.classList.add("hidden");
+    appView.classList.remove("hidden");
+    document.getElementById("signedInUser").textContent = (localStorage.getItem(userKey) || "user") + " signed in";
+    updateMode();
+  }
+
+  async function api(path, options = {}) {
+    const headers = options.headers || {};
+    if (options.body && !headers["Content-Type"]) {
+      headers["Content-Type"] = "application/json";
+    }
+    if (token()) {
+      headers.Authorization = "Bearer " + token();
+    }
+    const response = await fetch(path, {...options, headers});
+    const text = await response.text();
+    let body = text;
+    try {
+      body = text ? JSON.parse(text) : null;
+    } catch (ignored) {
+      body = text;
+    }
+    if (!response.ok) {
+      throw body || {status: response.status, message: response.statusText};
+    }
+    return body;
+  }
+
+  async function run(action, request) {
+    try {
+      const result = await request();
+      setOutput({action, result});
+      return result;
+    } catch (error) {
+      setOutput({action, error});
+      return null;
+    }
+  }
+
+  async function authenticate(mode) {
+    setAuthMessage("");
+    const requestBody = mode === "register"
+      ? {username: value("username"), email: value("email"), password: value("password")}
+      : {username: value("username"), password: value("password")};
+
+    try {
+      const auth = await api("/api/v1/auth/" + mode, {
+        method: "POST",
+        body: JSON.stringify(requestBody)
+      });
+      localStorage.setItem(tokenKey, auth.token);
+      localStorage.setItem(userKey, auth.username || value("username"));
+      setOutput({action: mode, result: auth});
+      showApp();
+      await loadDemoState();
+    } catch (error) {
+      setAuthMessage(error.message || "Authentication failed", true);
+    }
+  }
+
+  function updateMode() {
+    const consoleMode = apiToggle.checked;
+    ecommerceView.classList.toggle("hidden", consoleMode);
+    apiConsoleView.classList.toggle("hidden", !consoleMode);
+    document.getElementById("pageTitle").textContent = consoleMode ? "MiniKafka API Console" : "MiniKafka Order Demo";
+    document.getElementById("pageSubtitle").textContent = consoleMode
+      ? "Topics, producer, consumer, consumer groups, lag, TCP, and broker state"
+      : "Order events with topics, offsets, workers, and lag";
+    if (consoleMode && token()) {
+      refreshConsole();
+    }
+  }
+
+  async function createOrder() {
+    await run("create ecommerce order", async () => {
+      const order = await api("/api/v1/demo/ecommerce/orders", {
+        method: "POST",
+        body: JSON.stringify({
+          customerName: value("demoCustomer"),
+          itemName: value("demoItem"),
+          amount: Number(value("demoAmount"))
+        })
+      });
+      const state = await api("/api/v1/demo/ecommerce/state");
+      renderState(state);
+      return {order, state};
+    });
+  }
+
+  async function processPayments() {
+    await run("process ecommerce payments", async () => {
+      const step = await api("/api/v1/demo/ecommerce/payments/process", {method: "POST"});
+      const state = await api("/api/v1/demo/ecommerce/state");
+      renderState(state);
+      return {step, state};
+    });
+  }
+
+  async function processNotifications() {
+    await run("process ecommerce notifications", async () => {
+      const step = await api("/api/v1/demo/ecommerce/notifications/process", {method: "POST"});
+      const state = await api("/api/v1/demo/ecommerce/state");
+      renderState(state);
+      return {step, state};
+    });
+  }
+
+  async function loadDemoState() {
+    await run("load ecommerce demo state", async () => {
+      const state = await api("/api/v1/demo/ecommerce/state");
+      renderState(state);
+      return state;
+    });
+  }
+
+  async function resetDemo() {
+    await run("reset ecommerce demo", async () => {
+      const state = await api("/api/v1/demo/ecommerce/reset", {method: "POST"});
+      renderState(state);
+      await refreshConsoleQuietly();
+      return state;
+    });
+  }
+
+  function renderState(state) {
+    const orders = state.orders || [];
+    const events = state.events || {};
+    const paymentWorkerLag = state.paymentWorkerLag || [];
+    const notificationWorkerLag = state.notificationWorkerLag || [];
+
+    document.getElementById("ordersTopicCount").textContent = eventCount(events, "ecommerce.orders");
+    document.getElementById("paymentsTopicCount").textContent = eventCount(events, "ecommerce.payments");
+    document.getElementById("notificationsTopicCount").textContent = eventCount(events, "ecommerce.notifications");
+    document.getElementById("totalOrders").textContent = orders.length;
+    document.getElementById("pendingPayment").textContent = orders.filter(order => order.status === "ORDER_CREATED").length;
+    document.getElementById("paymentLag").textContent = totalLag(paymentWorkerLag);
+    document.getElementById("notificationLag").textContent = totalLag(notificationWorkerLag);
+    renderOrders(orders);
+  }
+
+  function renderOrders(orders) {
+    const target = document.getElementById("ordersTable");
+    if (!orders.length) {
+      target.innerHTML = '<div class="empty">No orders yet</div>';
+      return;
+    }
+
+    const rows = orders.map(order => `
+      <tr>
+        <td>${escapeHtml(shortId(order.id))}</td>
+        <td>${escapeHtml(order.customerName)}</td>
+        <td>${escapeHtml(order.itemName)}</td>
+        <td>${formatAmount(order.amount)}</td>
+        <td>${statusBadge(order.status)}</td>
+      </tr>
+    `).join("");
+
+    target.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>Order</th>
+            <th>Customer</th>
+            <th>Item</th>
+            <th>Amount</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  }
+
+  async function refreshConsole() {
+    await run("refresh broker console", async () => {
+      const data = await loadConsoleData();
+      return data;
+    });
+  }
+
+  async function refreshConsoleQuietly() {
+    if (!apiToggle.checked) {
+      return;
+    }
+    try {
+      await loadConsoleData();
+    } catch (ignored) {
+      // The response panel already shows the action that triggered this refresh.
+    }
+  }
+
+  async function loadConsoleData() {
+    const topics = await api("/api/v1/topics");
+    renderTopics(topics);
+    let broker = {};
+    try {
+      broker = await api("/api/v1/admin/broker");
+    } catch (error) {
+      broker = {topics: topics.length, consumerGroups: "-", storedMessages: "-", storageBytes: "-"};
+    }
+    renderBroker(broker, topics.length);
+    return {broker, topics};
+  }
+
+  function renderBroker(broker, fallbackTopicCount) {
+    document.getElementById("metricTopics").textContent = broker.topics ?? fallbackTopicCount ?? "-";
+    document.getElementById("metricGroups").textContent = broker.consumerGroups ?? "-";
+    document.getElementById("metricMessages").textContent = broker.storedMessages ?? "-";
+    document.getElementById("metricStorage").textContent = broker.storageBytes ?? "-";
+  }
+
+  function renderTopics(topics) {
+    const target = document.getElementById("topicTable");
+    if (!topics || topics.length === 0) {
+      target.innerHTML = '<div class="empty">No topics</div>';
+      return;
+    }
+    const rows = topics.map(topic => `
+      <tr>
+        <td>${escapeHtml(topic.name)}</td>
+        <td>${topic.partitions}</td>
+        <td>${escapeHtml(topic.createdAt || "")}</td>
+      </tr>
+    `).join("");
+    target.innerHTML = `
+      <table>
+        <thead><tr><th>Name</th><th>Partitions</th><th>Created</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  }
+
+  function renderLag(rows) {
+    const target = document.getElementById("lagTable");
+    if (!rows || rows.length === 0) {
+      target.innerHTML = '<div class="empty">No lag data</div>';
+      return;
+    }
+    const body = rows.map(row => `
+      <tr>
+        <td>${row.partition}</td>
+        <td>${row.endOffset}</td>
+        <td>${row.committedOffset}</td>
+        <td>${row.lag}</td>
+        <td><span class="badge ${row.status === "WARNING" ? "pending" : "done"}">${escapeHtml(row.status)}</span></td>
+      </tr>
+    `).join("");
+    target.innerHTML = `
+      <table>
+        <thead><tr><th>Partition</th><th>End Offset</th><th>Committed</th><th>Lag</th><th>Status</th></tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+    `;
+  }
+
+  function statusBadge(status) {
+    const className = status === "NOTIFICATION_SENT" ? "done" : status === "PAYMENT_COMPLETED" ? "info" : "pending";
+    return `<span class="badge ${className}">${escapeHtml(status)}</span>`;
+  }
+
+  function eventCount(events, topic) {
+    return (events[topic] || []).length;
+  }
+
+  function totalLag(rows) {
+    return rows.reduce((sum, row) => sum + Number(row.lag || 0), 0);
+  }
+
+  function shortId(id) {
+    return id ? String(id).slice(0, 8) : "";
+  }
+
+  function formatAmount(amount) {
+    return Number(amount || 0).toLocaleString("en-IN", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  }
+
+  function escapeHtml(text) {
+    return String(text ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  document.getElementById("loginBtn").addEventListener("click", () => authenticate("login"));
+  document.getElementById("registerBtn").addEventListener("click", () => authenticate("register"));
+  document.getElementById("logoutBtn").addEventListener("click", () => {
+    localStorage.removeItem(tokenKey);
+    localStorage.removeItem(userKey);
+    setOutput({});
+    showAuth();
+  });
+
+  apiToggle.addEventListener("change", updateMode);
+  document.getElementById("createDemoOrderBtn").addEventListener("click", createOrder);
+  document.getElementById("processDemoPaymentsBtn").addEventListener("click", processPayments);
+  document.getElementById("processDemoNotificationsBtn").addEventListener("click", processNotifications);
+  document.getElementById("loadDemoStateBtn").addEventListener("click", loadDemoState);
+  document.getElementById("resetDemoBtn").addEventListener("click", resetDemo);
+  document.getElementById("apiCreateDemoBtn").addEventListener("click", createOrder);
+  document.getElementById("apiPaymentDemoBtn").addEventListener("click", processPayments);
+  document.getElementById("apiNotificationDemoBtn").addEventListener("click", processNotifications);
+  document.getElementById("apiResetDemoBtn").addEventListener("click", resetDemo);
+
+  document.getElementById("refreshConsoleBtn").addEventListener("click", refreshConsole);
+  document.getElementById("loadTopicsBtn").addEventListener("click", () => run("load topics", async () => {
+    const topics = await api("/api/v1/topics");
+    renderTopics(topics);
+    return topics;
+  }));
+  document.getElementById("createTopicBtn").addEventListener("click", () => run("create topic", async () => {
+    const data = await api("/api/v1/topics", {
+      method: "POST",
+      body: JSON.stringify({name: value("topicName"), partitions: Number(value("topicPartitions"))})
+    });
+    await loadConsoleData();
+    return data;
+  }));
+  document.getElementById("increasePartitionsBtn").addEventListener("click", () => run("increase topic partitions", async () => {
+    const topic = encodeURIComponent(value("topicName"));
+    const target = encodeURIComponent(value("targetPartitions"));
+    const data = await api(`/api/v1/topics/${topic}/partitions?target=${target}`, {method: "PUT"});
+    await loadConsoleData();
+    return data;
+  }));
+  document.getElementById("deleteTopicBtn").addEventListener("click", () => run("delete topic", async () => {
+    const topicName = value("topicName");
+    await api("/api/v1/topics/" + encodeURIComponent(topicName), {method: "DELETE"});
+    await loadConsoleData();
+    return {deleted: topicName};
+  }));
+  document.getElementById("produceBtn").addEventListener("click", () => run("produce message", async () => {
+    const topic = encodeURIComponent(value("produceTopic"));
+    const data = await api(`/api/v1/topics/${topic}/messages`, {
+      method: "POST",
+      body: JSON.stringify({key: value("messageKey"), value: value("messageValue")})
+    });
+    await loadConsoleData();
+    return data;
+  }));
+  document.getElementById("consumeBtn").addEventListener("click", () => run("consume messages", () => {
+    const topic = encodeURIComponent(value("consumeTopic"));
+    const partition = value("consumePartition");
+    const params = new URLSearchParams({
+      offset: value("consumeOffset") || "0",
+      maxMessages: value("consumeMax") || "10"
+    });
+    if (partition) {
+      params.set("partition", partition);
+    }
+    return api(`/api/v1/topics/${topic}/messages?${params}`);
+  }));
+  document.getElementById("endOffsetsBtn").addEventListener("click", () => run("end offsets", () => {
+    const topic = encodeURIComponent(value("consumeTopic"));
+    return api(`/api/v1/topics/${topic}/offsets/end`);
+  }));
+  document.getElementById("pollBtn").addEventListener("click", () => run("consumer group poll", async () => {
+    const group = encodeURIComponent(value("groupId"));
+    const topic = encodeURIComponent(value("groupTopic"));
+    const data = await api(`/api/v1/consumer-groups/${group}/topics/${topic}/poll`, {
+      method: "POST",
+      body: JSON.stringify({
+        maxMessages: Number(value("pollMax")),
+        autoCommit: value("autoCommit") === "true"
+      })
+    });
+    await loadConsoleData();
+    return data;
+  }));
+  document.getElementById("groupOffsetsBtn").addEventListener("click", () => run("consumer group offsets", () => {
+    const group = encodeURIComponent(value("groupId"));
+    const topic = encodeURIComponent(value("groupTopic"));
+    return api(`/api/v1/consumer-groups/${group}/topics/${topic}/offsets`);
+  }));
+  document.getElementById("groupLagBtn").addEventListener("click", () => run("consumer lag", async () => {
+    const group = encodeURIComponent(value("groupId"));
+    const topic = encodeURIComponent(value("groupTopic"));
+    const rows = await api(`/api/v1/consumer-groups/${group}/topics/${topic}/lag`);
+    renderLag(rows);
+    return rows;
+  }));
+  document.getElementById("allGroupsBtn").addEventListener("click", () => run("consumer groups", () => api("/api/v1/consumer-groups")));
+  document.getElementById("tcpBtn").addEventListener("click", () => run("tcp command", () => api("/api/v1/admin/tcp/command", {
+    method: "POST",
+    body: JSON.stringify({command: value("tcpCommand")})
+  })));
+  document.getElementById("tcpTopicsBtn").addEventListener("click", () => {
+    document.getElementById("tcpCommand").value = "TOPICS";
+    document.getElementById("tcpBtn").click();
+  });
+  document.getElementById("tcpStatsBtn").addEventListener("click", () => {
+    document.getElementById("tcpCommand").value = "STATS";
+    document.getElementById("tcpBtn").click();
+  });
+  document.getElementById("copyBtn").addEventListener("click", async () => {
+    await navigator.clipboard.writeText(output.textContent);
+  });
+
+  if (token()) {
+    showApp();
+    loadDemoState();
+  } else {
+    showAuth();
+  }
+</script>
+</body>
+</html>

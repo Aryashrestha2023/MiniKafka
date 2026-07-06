@@ -1,0 +1,19 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:minikafka;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    open-in-view: false
+
+minikafka:
+  storage:
+    root: target/minikafka-test-logs
+  tcp:
+    enabled: false
+  jwt:
+    secret: test-secret-test-secret-test-secret-1234
+    ttl-minutes: 30

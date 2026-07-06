@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: minikafka-postgres
+    environment:
+      POSTGRES_DB: minikafka
+      POSTGRES_USER: minikafka
+      POSTGRES_PASSWORD: minikafka
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U minikafka -d minikafka"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minikafka:
+    build: .
+    container_name: minikafka-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: minikafka
+      POSTGRES_USER: minikafka
+      POSTGRES_PASSWORD: minikafka
+      JWT_SECRET: local-dev-secret-local-dev-secret-1234
+      MINIKAFKA_STORAGE_ROOT: /app/data/minikafka-logs
+      MINIKAFKA_TCP_HOST: 0.0.0.0
+      MINIKAFKA_TCP_PORT: 9092
+    ports:
+      - "8080:8080"
+      - "9092:9092"
+    volumes:
+      - broker-data:/app/data
+
+volumes:
+  postgres-data:
+  broker-data:
