@@ -880,8 +880,17 @@
                 </select>
               </label>
             </div>
+            <div class="grid-two">
+              <label>Member ID
+                <input id="memberId" value="member-a">
+              </label>
+              <span></span>
+            </div>
             <div class="actions">
               <button id="pollBtn">Poll</button>
+              <button id="joinMemberBtn" class="secondary">Join Member</button>
+              <button id="leaveMemberBtn" class="secondary">Leave Member</button>
+              <button id="assignmentsBtn" class="secondary">Assignments</button>
               <button id="groupOffsetsBtn" class="secondary">Offsets</button>
               <button id="groupLagBtn" class="secondary">Lag</button>
               <button id="allGroupsBtn" class="secondary">Groups</button>
@@ -1337,11 +1346,31 @@
       method: "POST",
       body: JSON.stringify({
         maxMessages: Number(value("pollMax")),
-        autoCommit: value("autoCommit") === "true"
+        autoCommit: value("autoCommit") === "true",
+        memberId: value("memberId") || null
       })
     });
     await loadConsoleData();
     return data;
+  }));
+  document.getElementById("joinMemberBtn").addEventListener("click", () => run("join consumer group member", () => {
+    const group = encodeURIComponent(value("groupId"));
+    const topic = encodeURIComponent(value("groupTopic"));
+    return api(`/api/v1/consumer-groups/${group}/topics/${topic}/members`, {
+      method: "POST",
+      body: JSON.stringify({memberId: value("memberId")})
+    });
+  }));
+  document.getElementById("leaveMemberBtn").addEventListener("click", () => run("leave consumer group member", () => {
+    const group = encodeURIComponent(value("groupId"));
+    const topic = encodeURIComponent(value("groupTopic"));
+    const member = encodeURIComponent(value("memberId"));
+    return api(`/api/v1/consumer-groups/${group}/topics/${topic}/members/${member}`, {method: "DELETE"});
+  }));
+  document.getElementById("assignmentsBtn").addEventListener("click", () => run("consumer group assignments", () => {
+    const group = encodeURIComponent(value("groupId"));
+    const topic = encodeURIComponent(value("groupTopic"));
+    return api(`/api/v1/consumer-groups/${group}/topics/${topic}/assignments`);
   }));
   document.getElementById("groupOffsetsBtn").addEventListener("click", () => run("consumer group offsets", () => {
     const group = encodeURIComponent(value("groupId"));

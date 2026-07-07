@@ -2,6 +2,9 @@ package com.minikafka.api;
 
 import com.minikafka.broker.BrokerService;
 import com.minikafka.broker.dto.CommitOffsetRequest;
+import com.minikafka.broker.dto.ConsumerGroupAssignmentResponse;
+import com.minikafka.broker.dto.ConsumerGroupMemberRequest;
+import com.minikafka.broker.dto.ConsumerGroupMemberResponse;
 import com.minikafka.broker.dto.ConsumeResponse;
 import com.minikafka.broker.dto.LagResponse;
 import com.minikafka.broker.dto.OffsetResponse;
@@ -9,6 +12,7 @@ import com.minikafka.broker.dto.PollRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -48,6 +52,29 @@ public class ConsumerGroupController {
     @GetMapping("/{groupId}/topics/{topic}/lag")
     public List<LagResponse> lag(@PathVariable String groupId, @PathVariable String topic) {
         return brokerService.lag(groupId, topic);
+    }
+
+    @PostMapping("/{groupId}/topics/{topic}/members")
+    public ConsumerGroupMemberResponse join(
+            @PathVariable String groupId,
+            @PathVariable String topic,
+            @Valid @RequestBody ConsumerGroupMemberRequest request
+    ) {
+        return brokerService.joinGroup(groupId, topic, request.memberId());
+    }
+
+    @DeleteMapping("/{groupId}/topics/{topic}/members/{memberId}")
+    public ConsumerGroupAssignmentResponse leave(
+            @PathVariable String groupId,
+            @PathVariable String topic,
+            @PathVariable String memberId
+    ) {
+        return brokerService.leaveGroup(groupId, topic, memberId);
+    }
+
+    @GetMapping("/{groupId}/topics/{topic}/assignments")
+    public ConsumerGroupAssignmentResponse assignments(@PathVariable String groupId, @PathVariable String topic) {
+        return brokerService.assignments(groupId, topic);
     }
 
     @PostMapping("/{groupId}/topics/{topic}/offsets")

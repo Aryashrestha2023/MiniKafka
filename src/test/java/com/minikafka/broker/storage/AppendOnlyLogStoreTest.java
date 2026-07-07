@@ -11,6 +11,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.List;
 import java.util.Map;
 
@@ -38,8 +39,8 @@ class AppendOnlyLogStoreTest {
     void ensureTopicCreatesPartitionFiles() {
         store.ensureTopic("orders", 2);
 
-        assertThat(tempDir.resolve("orders/partition-0/messages.jsonl")).exists();
-        assertThat(tempDir.resolve("orders/partition-1/messages.jsonl")).exists();
+        assertThat(tempDir.resolve("orders/partition-0/messages.wal")).exists();
+        assertThat(tempDir.resolve("orders/partition-1/messages.wal")).exists();
     }
 
     @Test
@@ -162,7 +163,40 @@ class AppendOnlyLogStoreTest {
         rehydrated.ensureTopic("orders", 1);
 
         assertThat(rehydrated.append("orders", 0, null, "one", Map.of()).offset()).isEqualTo(1);
-        assertThat(Files.readAllLines(tempDir.resolve("orders/partition-0/messages.jsonl"))).hasSize(2);
+        assertThat(rehydrated.read("orders", 0, 0, 10)).extracting(LogRecord::value).containsExactly("zero", "one");
+    }
+
+    @Test
+    void ensureTopicRecoversTruncatedWalTail() throws Exception {
+        store.ensureTopic("orders", 1);
+        store.append("orders", 0, null, "zero", Map.of());
+        store.append("orders", 0, null, "one", Map.of());
+        Path wal = tempDir.resolve("orders/partition-0/messages.wal");
+        long originalSize = Files.size(wal);
+        try (var channel = Files.newByteChannel(wal, StandardOpenOption.WRITE)) {
+            channel.truncate(originalSize - 3);
+        }
+        MiniKafkaProperties properties = new MiniKafkaProperties();
+        properties.getStorage().setRoot(tempDir.toString());
+        AppendOnlyLogStore rehydrated = new AppendOnlyLogStore(properties, new ObjectMapper().registerModule(new JavaTimeModule()));
+
+        rehydrated.ensureTopic("orders", 1);
+
+        assertThat(rehydrated.read("orders", 0, 0, 10)).extracting(LogRecord::value).containsExactly("zero");
+        assertThat(rehydrated.append("orders", 0, null, "recovered", Map.of()).offset()).isEqualTo(1);
+    }
+
+    @Test
+    void ensureTopicRejectsCorruptWalLength() throws Exception {
+        store.ensureTopic("orders", 1);
+        Path wal = tempDir.resolve("orders/partition-0/messages.wal");
+        Files.write(wal, new byte[]{0, 0, 0, 0});
+        MiniKafkaProperties properties = new MiniKafkaProperties();
+        properties.getStorage().setRoot(tempDir.toString());
+        AppendOnlyLogStore rehydrated = new AppendOnlyLogStore(properties, new ObjectMapper().registerModule(new JavaTimeModule()));
+
+        assertThatThrownBy(() -> rehydrated.ensureTopic("orders", 1))
+                .isInstanceOf(LogStorageException.class);
     }
 
     @Test

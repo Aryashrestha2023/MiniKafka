@@ -40,7 +40,7 @@ public class TcpProtocolHandler {
         return switch (command.name()) {
             case "HELP" -> Map.of(
                     "commands",
-                    "CREATE_TOPIC topic partitions | TOPICS | PRODUCE topic key|- value | CONSUME topic partition offset max | POLL group topic max autoCommit | COMMIT group topic partition offset | OFFSETS group topic | STATS"
+                    "CREATE_TOPIC topic partitions | TOPICS | PRODUCE topic key|- value | CONSUME topic partition offset max | POLL group topic max autoCommit | POLL_MEMBER group topic member max autoCommit | JOIN_GROUP group topic member | LEAVE_GROUP group topic member | ASSIGNMENTS group topic | COMMIT group topic partition offset | OFFSETS group topic | STATS"
             );
             case "CREATE_TOPIC" -> {
                 require(command, 2);
@@ -68,6 +68,26 @@ public class TcpProtocolHandler {
                         command.args().get(1),
                         new PollRequest(integer(command.args().get(2), "max"), Boolean.parseBoolean(command.args().get(3)))
                 );
+            }
+            case "POLL_MEMBER" -> {
+                require(command, 5);
+                yield brokerService.poll(
+                        command.args().get(0),
+                        command.args().get(1),
+                        new PollRequest(integer(command.args().get(3), "max"), Boolean.parseBoolean(command.args().get(4)), command.args().get(2))
+                );
+            }
+            case "JOIN_GROUP" -> {
+                require(command, 3);
+                yield brokerService.joinGroup(command.args().get(0), command.args().get(1), command.args().get(2));
+            }
+            case "LEAVE_GROUP" -> {
+                require(command, 3);
+                yield brokerService.leaveGroup(command.args().get(0), command.args().get(1), command.args().get(2));
+            }
+            case "ASSIGNMENTS" -> {
+                require(command, 2);
+                yield brokerService.assignments(command.args().get(0), command.args().get(1));
             }
             case "COMMIT" -> {
                 require(command, 4);

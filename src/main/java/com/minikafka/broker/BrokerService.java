@@ -5,6 +5,8 @@ import com.minikafka.api.ConflictException;
 import com.minikafka.api.NotFoundException;
 import com.minikafka.broker.dto.CommitOffsetRequest;
 import com.minikafka.broker.dto.ConsumeResponse;
+import com.minikafka.broker.dto.ConsumerGroupAssignmentResponse;
+import com.minikafka.broker.dto.ConsumerGroupMemberResponse;
 import com.minikafka.broker.dto.CreateTopicRequest;
 import com.minikafka.broker.dto.LagResponse;
 import com.minikafka.broker.dto.MessageResponse;
@@ -42,17 +44,20 @@ public class BrokerService {
     private final OffsetRepository offsetRepository;
     private final AppendOnlyLogStore logStore;
     private final DefaultPartitioner partitioner;
+    private final ConsumerGroupCoordinator groupCoordinator;
 
     public BrokerService(
             TopicRepository topicRepository,
             OffsetRepository offsetRepository,
             AppendOnlyLogStore logStore,
-            DefaultPartitioner partitioner
+            DefaultPartitioner partitioner,
+            ConsumerGroupCoordinator groupCoordinator
     ) {
         this.topicRepository = topicRepository;
         this.offsetRepository = offsetRepository;
         this.logStore = logStore;
         this.partitioner = partitioner;
+        this.groupCoordinator = groupCoordinator;
     }
 
     @PostConstruct
@@ -105,6 +110,7 @@ public class BrokerService {
         requireTopic(name);
         offsetRepository.deleteByTopicName(name);
         topicRepository.deleteByName(name);
+        groupCoordinator.clearTopic(name);
         logStore.deleteTopic(name);
         log.info("event=topic_deleted topic={}", name);
     }
@@ -171,8 +177,17 @@ public class BrokerService {
         boolean autoCommit = Boolean.TRUE.equals(request.autoCommit());
         List<MessageResponse> responses = new ArrayList<>();
         Map<Integer, Long> nextOffsets = new LinkedHashMap<>();
+        List<Integer> assignedPartitions = groupCoordinator.assignmentFor(
+                groupId,
+                topic.getName(),
+                request.memberId(),
+                topic.getPartitionCount()
+        );
 
-        for (int partition = 0; partition < topic.getPartitionCount() && responses.size() < limit; partition++) {
+        for (int partition : assignedPartitions) {
+            if (responses.size() >= limit) {
+                break;
+            }
             long startOffset = currentOffset(groupId, topic.getName(), partition);
             int remaining = limit - responses.size();
             List<LogRecord> records = logStore.read(topic.getName(), partition, startOffset, remaining);
@@ -187,6 +202,27 @@ public class BrokerService {
         log.info("event=consumer_poll group={} topic={} records={} autoCommit={}",
                 groupId, topicName, responses.size(), autoCommit);
         return new ConsumeResponse(responses, nextOffsets);
+    }
+
+    @Transactional(readOnly = true)
+    public ConsumerGroupMemberResponse joinGroup(String groupId, String topicName, String memberId) {
+        TopicEntity topic = requireTopic(topicName);
+        Map<String, List<Integer>> assignments = groupCoordinator.join(groupId, topic.getName(), memberId, topic.getPartitionCount());
+        return new ConsumerGroupMemberResponse(groupId, topic.getName(), memberId, assignments.getOrDefault(memberId, List.of()), assignments);
+    }
+
+    @Transactional(readOnly = true)
+    public ConsumerGroupAssignmentResponse leaveGroup(String groupId, String topicName, String memberId) {
+        TopicEntity topic = requireTopic(topicName);
+        Map<String, List<Integer>> assignments = groupCoordinator.leave(groupId, topic.getName(), memberId, topic.getPartitionCount());
+        return new ConsumerGroupAssignmentResponse(groupId, topic.getName(), assignments);
+    }
+
+    @Transactional(readOnly = true)
+    public ConsumerGroupAssignmentResponse assignments(String groupId, String topicName) {
+        TopicEntity topic = requireTopic(topicName);
+        Map<String, List<Integer>> assignments = groupCoordinator.assignments(groupId, topic.getName(), topic.getPartitionCount());
+        return new ConsumerGroupAssignmentResponse(groupId, topic.getName(), assignments);
     }
 
     @Transactional

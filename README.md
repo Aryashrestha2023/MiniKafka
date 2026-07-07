@@ -1,6 +1,6 @@
 # MiniKafka
 
-MiniKafka is a Kafka-inspired distributed event streaming platform built with Java 17 and Spring Boot. It implements the core ideas behind Kafka: topics, partitions, producers, consumers, consumer groups, offsets, consumer lag, append-only log storage, broker administration, REST APIs, and a Java NIO TCP broker.
+MiniKafka is a Kafka-inspired distributed event streaming platform built with Java 17 and Spring Boot. It implements the core ideas behind Kafka: topics, partitions, producers, consumers, consumer groups, offsets, consumer lag, WAL-style append-only storage, broker administration, REST APIs, and a Java NIO TCP broker.
 
 It also includes a small e-commerce order-processing demo so the platform can be demonstrated visually from the browser.
 
@@ -15,7 +15,7 @@ It also includes a small e-commerce order-processing demo so the platform can be
 - PostgreSQL
 - Java NIO TCP sockets
 - ExecutorService
-- Append-only JSONL log files
+- Length-prefixed append-only WAL files
 - Docker + Docker Compose
 - JUnit 5, Mockito, AssertJ
 - Static HTML/CSS/JavaScript demo UI
@@ -27,11 +27,13 @@ It also includes a small e-commerce order-processing demo so the platform can be
 - Producer API for publishing messages to topics
 - Consumer API for reading messages from topics and partitions
 - Consumer groups with committed offsets
+- Consumer group membership with deterministic partition rebalancing
 - Consumer lag monitoring
-- Ordered append-only log storage per partition
+- Ordered WAL-style append-only log storage per partition
 - PostgreSQL persistence for users, topics, and consumer offsets
 - Broker admin APIs for stats, config, storage, and topic details
 - Java NIO TCP broker protocol
+- Opt-in TCP benchmark runner for messages/sec proof
 - Browser UI with:
   - Login/register screen
   - E-commerce order demo
@@ -71,11 +73,11 @@ flowchart LR
 
     Broker --> Topics["PostgreSQL Topic Metadata"]
     Broker --> Offsets["PostgreSQL Consumer Offsets"]
-    Broker --> Logs["Append-only Partition Logs"]
+    Broker --> Logs["Length-prefixed WAL Partition Logs"]
 
-    Logs --> P0["partition-0/messages.jsonl"]
-    Logs --> P1["partition-1/messages.jsonl"]
-    Logs --> P2["partition-2/messages.jsonl"]
+    Logs --> P0["partition-0/messages.wal"]
+    Logs --> P1["partition-1/messages.wal"]
+    Logs --> P2["partition-2/messages.wal"]
 ```
 
 ## Core MiniKafka Flow
@@ -86,7 +88,7 @@ flowchart LR
     Request --> Partitioner["DefaultPartitioner"]
     Partitioner --> Choice["hash(key) % partitionCount"]
     Choice --> Partition["Selected Partition"]
-    Partition --> Log["Append-only JSONL Log"]
+    Partition --> Log["Length-prefixed WAL Log"]
     Log --> Offset["Offset Assigned"]
 
     Consumer["Consumer Group"] --> Poll["Poll Topic"]
@@ -94,6 +96,43 @@ flowchart LR
     Read --> Commit["Commit Next Offset"]
     Commit --> Lag["Lag = End Offset - Committed Offset"]
 ```
+
+## Consumer Group Rebalancing
+
+MiniKafka supports consumer group membership and deterministic partition assignment.
+
+```mermaid
+flowchart TD
+    Group["Consumer Group: checkout"] --> A["member-a"]
+    Group --> B["member-b"]
+    Topic["Topic: orders with 4 partitions"] --> P0["partition 0"]
+    Topic --> P1["partition 1"]
+    Topic --> P2["partition 2"]
+    Topic --> P3["partition 3"]
+
+    A --> P0
+    A --> P2
+    B --> P1
+    B --> P3
+```
+
+Assignment rule:
+
+```text
+sorted members + round-robin partitions
+```
+
+Example:
+
+```text
+members: member-a, member-b
+partitions: 0, 1, 2, 3
+
+member-a -> 0, 2
+member-b -> 1, 3
+```
+
+When a member joins, leaves, or the topic partition count changes, assignments are recalculated.
 
 ## E-Commerce Demo Flow
 
@@ -353,6 +392,9 @@ curl "http://localhost:8080/api/v1/consumer-groups/checkout/topics/orders/lag" \
 | POST | `/api/v1/consumer-groups/{groupId}/topics/{topic}/offsets` | Commit next offset |
 | POST | `/api/v1/consumer-groups/{groupId}/topics/{topic}/poll` | Poll as a consumer group |
 | GET | `/api/v1/consumer-groups/{groupId}/topics/{topic}/lag` | View consumer lag |
+| POST | `/api/v1/consumer-groups/{groupId}/topics/{topic}/members` | Join member and rebalance |
+| DELETE | `/api/v1/consumer-groups/{groupId}/topics/{topic}/members/{memberId}` | Leave member and rebalance |
+| GET | `/api/v1/consumer-groups/{groupId}/topics/{topic}/assignments` | View partition assignments |
 
 ### Admin
 
@@ -386,22 +428,60 @@ TOPICS
 PRODUCE orders order-1 checkout-created
 CONSUME orders 0 0 10
 POLL checkout orders 10 true
+JOIN_GROUP checkout orders member-a
+JOIN_GROUP checkout orders member-b
+ASSIGNMENTS checkout orders
+POLL_MEMBER checkout orders member-a 10 true
+LEAVE_GROUP checkout orders member-b
 COMMIT checkout orders 0 5
 OFFSETS checkout orders
 STATS
 ```
 
+## Benchmark Runner
+
+MiniKafka includes an opt-in TCP benchmark runner. It starts the application, creates a benchmark topic, opens multiple TCP clients, produces messages, and prints actual throughput.
+
+Run with Docker/PostgreSQL or a local PostgreSQL database:
+
+```bash
+mvn spring-boot:run -Dspring-boot.run.profiles=benchmark
+```
+
+Useful benchmark properties:
+
+```bash
+mvn spring-boot:run -Dspring-boot.run.profiles=benchmark -Dspring-boot.run.arguments="--minikafka.benchmark.clients=8 --minikafka.benchmark.messages-per-client=1000 --minikafka.benchmark.target-messages-per-second=5000"
+```
+
+The log prints:
+
+```text
+event=tcp_benchmark_complete produced=8000 clients=8 messagesPerSecond=... target=5000 targetMet=true/false
+```
+
+Only claim `5,000+ messages/sec` after your own benchmark run prints `targetMet=true`.
+
 ## Storage Model
 
-Each topic partition is stored as an append-only JSONL file:
+Each topic partition is stored as a length-prefixed append-only WAL file:
 
 ```text
 data/minikafka-logs/
   orders/
-    partition-0/messages.jsonl
-    partition-1/messages.jsonl
-    partition-2/messages.jsonl
+    partition-0/messages.wal
+    partition-1/messages.wal
+    partition-2/messages.wal
 ```
+
+Each WAL record stores:
+
+```text
+4-byte payload length
+JSON encoded LogRecord payload
+```
+
+The broker appends records under a partition write lock and forces the file channel to disk. On startup, MiniKafka scans WAL files to rehydrate the next offset and truncates a partially written tail record if needed.
 
 Offsets are contiguous and ordered per partition. Consumer group commits store the next offset to read.
 
@@ -486,7 +566,7 @@ Compile without tests:
 mvn -DskipTests compile
 ```
 
-The tests cover append-only log storage, partitioning, TCP command parsing, and broker service behavior.
+The tests cover WAL storage, partitioning, TCP command parsing, broker service behavior, consumer group rebalancing, topology changes, and WAL recovery/fault handling.
 
 ## GitHub Checklist
 
@@ -514,8 +594,8 @@ MiniKafka intentionally focuses on core Kafka concepts. It does not currently im
 - Broker replication
 - Leader election
 - Distributed consensus
-- Automatic consumer rebalancing
+- Kafka-compatible heartbeat-based rebalancing
 - Kafka protocol compatibility
-- Production-grade retention and compaction
+- Production-grade segment retention and compaction
 
 These are good future enhancements, but the current project is complete enough to demonstrate event streaming internals and event-driven application design.

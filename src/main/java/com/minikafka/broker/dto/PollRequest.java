@@ -5,6 +5,10 @@ import jakarta.validation.constraints.Min;
 
 public record PollRequest(
         @Min(1) @Max(500) Integer maxMessages,
-        Boolean autoCommit
+        Boolean autoCommit,
+        String memberId
 ) {
+    public PollRequest(Integer maxMessages, Boolean autoCommit) {
+        this(maxMessages, autoCommit, null);
+    }
 }

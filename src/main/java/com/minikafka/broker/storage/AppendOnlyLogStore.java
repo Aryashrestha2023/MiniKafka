@@ -1,6 +1,5 @@
 package com.minikafka.broker.storage;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.minikafka.broker.model.LogRecord;
 import com.minikafka.broker.model.TopicPartition;
@@ -10,7 +9,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -28,7 +28,8 @@ import java.util.stream.Stream;
 public class AppendOnlyLogStore {
 
     private static final Logger log = LoggerFactory.getLogger(AppendOnlyLogStore.class);
-    private static final String LOG_FILE_NAME = "messages.jsonl";
+    private static final String LOG_FILE_NAME = "messages.wal";
+    private static final int MAX_RECORD_BYTES = 16 * 1024 * 1024;
 
     private final Path root;
     private final ObjectMapper objectMapper;
@@ -49,10 +50,7 @@ public class AppendOnlyLogStore {
                 if (Files.notExists(file)) {
                     Files.createFile(file);
                 }
-                long existingMessages;
-                try (Stream<String> lines = Files.lines(file, StandardCharsets.UTF_8)) {
-                    existingMessages = lines.count();
-                }
+                long existingMessages = recoverAndCount(file);
                 nextOffsets.put(topicPartition, new AtomicLong(existingMessages));
                 locks.computeIfAbsent(topicPartition, ignored -> new ReentrantReadWriteLock());
                 log.info("event=partition_initialized topic={} partition={} nextOffset={}", topic, partition, existingMessages);
@@ -70,13 +68,7 @@ public class AppendOnlyLogStore {
         try {
             long offset = nextOffsets.get(topicPartition).getAndIncrement();
             LogRecord record = new LogRecord(offset, key, value, headers, Instant.now());
-            Files.writeString(
-                    logFile(topicPartition),
-                    objectMapper.writeValueAsString(record) + System.lineSeparator(),
-                    StandardCharsets.UTF_8,
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.APPEND
-            );
+            appendWalRecord(logFile(topicPartition), record);
             return record;
         } catch (IOException ex) {
             throw new LogStorageException("Could not append record to " + topicPartition.storageKey(), ex);
@@ -96,12 +88,16 @@ public class AppendOnlyLogStore {
         ensurePartitionKnown(topicPartition);
         ReentrantReadWriteLock.ReadLock readLock = lock(topicPartition).readLock();
         readLock.lock();
-        try (Stream<String> lines = Files.lines(logFile(topicPartition), StandardCharsets.UTF_8)) {
+        try {
             List<LogRecord> records = new ArrayList<>();
-            lines.map(this::deserialize)
-                    .filter(record -> record.offset() >= offset)
-                    .limit(maxMessages)
-                    .forEach(records::add);
+            for (LogRecord record : readWalRecords(logFile(topicPartition), false)) {
+                if (record.offset() >= offset) {
+                    records.add(record);
+                    if (records.size() >= maxMessages) {
+                        break;
+                    }
+                }
+            }
             return records;
         } catch (IOException ex) {
             throw new LogStorageException("Could not read records from " + topicPartition.storageKey(), ex);
@@ -185,10 +181,85 @@ public class AppendOnlyLogStore {
                 .resolve(LOG_FILE_NAME);
     }
 
-    private LogRecord deserialize(String line) {
+    private long recoverAndCount(Path file) throws IOException {
+        return readWalRecords(file, true).size();
+    }
+
+    private void appendWalRecord(Path file, LogRecord record) throws IOException {
+        byte[] payload = objectMapper.writeValueAsBytes(record);
+        ByteBuffer frame = ByteBuffer.allocate(Integer.BYTES + payload.length);
+        frame.putInt(payload.length);
+        frame.put(payload);
+        frame.flip();
+        try (FileChannel channel = FileChannel.open(file, StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND)) {
+            while (frame.hasRemaining()) {
+                channel.write(frame);
+            }
+            channel.force(false);
+        }
+    }
+
+    private List<LogRecord> readWalRecords(Path file, boolean recoverTail) throws IOException {
+        List<LogRecord> records = new ArrayList<>();
+        StandardOpenOption[] options = recoverTail
+                ? new StandardOpenOption[]{StandardOpenOption.READ, StandardOpenOption.WRITE}
+                : new StandardOpenOption[]{StandardOpenOption.READ};
+        try (FileChannel channel = FileChannel.open(file, options)) {
+            long validPosition = 0;
+            while (true) {
+                long frameStart = channel.position();
+                ByteBuffer lengthBuffer = ByteBuffer.allocate(Integer.BYTES);
+                int lengthBytes = readFully(channel, lengthBuffer);
+                if (lengthBytes == 0) {
+                    return records;
+                }
+                if (lengthBytes < Integer.BYTES) {
+                    recoverOrFail(channel, recoverTail, validPosition, "truncated WAL length prefix");
+                    return records;
+                }
+                lengthBuffer.flip();
+                int payloadLength = lengthBuffer.getInt();
+                if (payloadLength <= 0 || payloadLength > MAX_RECORD_BYTES) {
+                    throw new LogStorageException("Corrupt WAL record length at byte " + frameStart);
+                }
+                ByteBuffer payloadBuffer = ByteBuffer.allocate(payloadLength);
+                int payloadBytes = readFully(channel, payloadBuffer);
+                if (payloadBytes < payloadLength) {
+                    recoverOrFail(channel, recoverTail, validPosition, "truncated WAL payload");
+                    return records;
+                }
+                payloadBuffer.flip();
+                records.add(deserialize(payloadBuffer.array()));
+                validPosition = channel.position();
+            }
+        }
+    }
+
+    private int readFully(FileChannel channel, ByteBuffer buffer) throws IOException {
+        int total = 0;
+        while (buffer.hasRemaining()) {
+            int read = channel.read(buffer);
+            if (read == -1) {
+                return total;
+            }
+            total += read;
+        }
+        return total;
+    }
+
+    private void recoverOrFail(FileChannel channel, boolean recoverTail, long validPosition, String reason) throws IOException {
+        if (!recoverTail) {
+            throw new LogStorageException(reason);
+        }
+        channel.truncate(validPosition);
+        channel.position(validPosition);
+        log.warn("event=wal_tail_recovered reason={} validBytes={}", reason, validPosition);
+    }
+
+    private LogRecord deserialize(byte[] payload) {
         try {
-            return objectMapper.readValue(line, LogRecord.class);
-        } catch (JsonProcessingException ex) {
+            return objectMapper.readValue(payload, LogRecord.class);
+        } catch (IOException ex) {
             throw new LogStorageException("Corrupt log record", ex);
         }
     }

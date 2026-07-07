@@ -41,12 +41,14 @@ class BrokerServiceTest {
     private AppendOnlyLogStore logStore;
     @Mock
     private DefaultPartitioner partitioner;
+    private ConsumerGroupCoordinator groupCoordinator;
 
     private BrokerService brokerService;
 
     @BeforeEach
     void setUp() {
-        brokerService = new BrokerService(topicRepository, offsetRepository, logStore, partitioner);
+        groupCoordinator = new ConsumerGroupCoordinator();
+        brokerService = new BrokerService(topicRepository, offsetRepository, logStore, partitioner, groupCoordinator);
     }
 
     @Test
@@ -137,6 +139,38 @@ class BrokerServiceTest {
         assertThat(response.records()).hasSize(1);
         assertThat(response.nextOffsets()).containsEntry(0, 4L);
         verify(offsetRepository).save(any(OffsetEntity.class));
+    }
+
+    @Test
+    void pollWithMemberIdReadsOnlyAssignedPartitionsAfterRebalance() {
+        when(topicRepository.findByName("orders")).thenReturn(Optional.of(new TopicEntity("orders", 4)));
+        when(offsetRepository.findByGroupIdAndTopicNameAndPartitionId(any(), any(), any(Integer.class)))
+                .thenReturn(Optional.empty());
+        when(logStore.read("orders", 0, 0, 10))
+                .thenReturn(List.of(new LogRecord(0, "k0", "v0", Map.of(), Instant.now())));
+        when(logStore.read("orders", 2, 0, 9))
+                .thenReturn(List.of(new LogRecord(0, "k2", "v2", Map.of(), Instant.now())));
+
+        brokerService.joinGroup("checkout", "orders", "member-a");
+        brokerService.joinGroup("checkout", "orders", "member-b");
+        var response = brokerService.poll("checkout", "orders", new PollRequest(10, false, "member-a"));
+
+        assertThat(response.nextOffsets()).containsOnlyKeys(0, 2);
+        assertThat(response.records()).extracting(record -> record.partition()).containsExactly(0, 2);
+    }
+
+    @Test
+    void assignmentsRebalanceWhenTopicPartitionsIncrease() {
+        TopicEntity topic = new TopicEntity("orders", 2);
+        when(topicRepository.findByName("orders")).thenReturn(Optional.of(topic));
+        brokerService.joinGroup("checkout", "orders", "member-a");
+        brokerService.joinGroup("checkout", "orders", "member-b");
+
+        topic.setPartitionCount(4);
+        var assignments = brokerService.assignments("checkout", "orders");
+
+        assertThat(assignments.assignments()).containsEntry("member-a", List.of(0, 2));
+        assertThat(assignments.assignments()).containsEntry("member-b", List.of(1, 3));
     }
 
     @Test
